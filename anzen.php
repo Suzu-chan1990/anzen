@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Anzen
  * Description: Modular security plugin for URL masking. (v1.3 High-Performance)
- * Version: 1.3.1
+ * Version: 1.3.2
  * Author: Saguya
  * License: GPLv2 or later
  * License URI: https://www.gnu.org/licenses/gpl-2.0.html
@@ -16,7 +16,7 @@ if ( ! defined( 'ABSPATH' ) ) {
     exit;
 }
 
-define( 'ANZEN_VERSION', '1.3.1' );
+define( 'ANZEN_VERSION', '1.3.2' );
 define( 'ANZEN_PLUGIN_DIR', plugin_dir_path( __FILE__ ) );
 
 $config_file = ANZEN_PLUGIN_DIR . 'config.php';

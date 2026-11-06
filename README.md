@@ -148,6 +148,9 @@ Anzen updates itself from the [GitHub releases](https://github.com/Suzu-chan1990
 
 ## 📜 Changelog
 
+**v1.3.2**
+- **Fixed:** Resized images (thumbnails, medium, site icon sizes …) got broken URLs like `/media/cropped-favicon-32x32.webp`. WordPress builds the URL of a resized image from the full-size URL by replacing the file name; that URL was already masked, so the file name ended up after the prefix. The full-size URL now stays unmasked inside this step and the finished URL of the resized image is masked as usual.
+
 **v1.3.1**
 - **Fixed:** The prefix chosen in the setup (e.g. `example`) was ignored and URLs always used `/media/`. The default was defined before `config.php` was loaded. Existing tokens stay valid; only the folder in the URL changes.
 - **Fixed:** The GitHub updater was only loaded in the admin. Scheduled update checks and automatic background updates (WP-Cron) did not work; it is now loaded on every request.

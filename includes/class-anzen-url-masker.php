@@ -8,6 +8,9 @@ class Anzen_URL_Masker {
     private $target_dir;
     private $upload_base_url;
     private $mask_prefix;
+    // Set while image_downsize() runs: it builds the URL of a resized image from wp_get_attachment_url()
+    // by replacing the file name, so that URL must stay unmasked (the result is masked afterwards)
+    private $skip_next_url = false;
 
     public function __construct() {
         $upload_dir = wp_upload_dir();
@@ -22,13 +25,31 @@ class Anzen_URL_Masker {
         }
         if ( is_admin() ) return;
 
-        add_filter( 'wp_get_attachment_url', array( $this, 'mask_attachment_url' ), 999, 2 );
+        add_filter( 'image_downsize', array( $this, 'before_downsize' ), PHP_INT_MAX, 3 );
+        add_filter( 'wp_get_attachment_url', array( $this, 'filter_attachment_url' ), 999, 2 );
         add_filter( 'get_the_post_thumbnail_url', array( $this, 'mask_attachment_url' ), 999, 2 );
         add_filter( 'wp_calculate_image_srcset', array( $this, 'mask_srcset' ), 999, 5 );
         add_filter( 'post_thumbnail_html', array( $this, 'mask_thumbnail_html' ), 999, 5 );
         add_filter( 'the_content', array( $this, 'mask_content_urls' ), 999 );
         add_filter( 'wp_get_attachment_image_src', array( $this, 'mask_attachment_image_src' ), 999, 4 );
         add_filter( 'wp_get_attachment_image', array( $this, 'mask_attachment_image' ), 999, 5 );
+    }
+
+    // Runs last on image_downsize. Only when no other filter short-circuits, image_downsize() calls
+    // wp_get_attachment_url() next; that one call stays unmasked.
+    public function before_downsize( $out, $id, $size ) {
+        if ( $out === false ) {
+            $this->skip_next_url = true;
+        }
+        return $out;
+    }
+
+    public function filter_attachment_url( $url, $post_id ) {
+        if ( $this->skip_next_url ) {
+            $this->skip_next_url = false;
+            return $url;
+        }
+        return $this->mask_attachment_url( $url, $post_id );
     }
 
     public function mask_attachment_url( $url, $post_id ) {
