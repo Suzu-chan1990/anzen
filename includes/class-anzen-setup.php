@@ -22,7 +22,7 @@ class Anzen_Setup {
 
     public function admin_notice() {
         $screen = get_current_screen();
-        // Show notice only if config.php is missing/unconfigured and user is not on the setup page
+        // Show notice only if the configuration is missing/unconfigured and user is not on the setup page
         if ( $screen && $screen->id !== 'settings_page_anzen-setup' ) {
             echo '<div class="notice notice-error is-dismissible"><p><strong>Anzen Security:</strong> The plugin is almost ready! <a href="' . esc_url( admin_url( 'options-general.php?page=anzen-setup' ) ) . '">Please click here to run the setup wizard</a>.</p></div>';
         }
@@ -50,21 +50,18 @@ class Anzen_Setup {
         if ( isset( $_POST['anzen_setup_submit'] ) && current_user_can( 'manage_options' ) ) {
             check_admin_referer( 'anzen_setup_action', 'anzen_setup_nonce' );
             
-            // Strikte Allowlist gegen Code Injection in config.php
+            // Strict allow-list against code injection into the configuration file
             $raw_method = isset( $_POST['anzen_method'] ) ? sanitize_text_field( wp_unslash( $_POST['anzen_method'] ) ) : 'php';
             $method = ( $raw_method === 'nginx' ) ? 'nginx' : 'php';
             
-            // Strikte Regex-Bereinigung fuer das Prefix
+            // Strict regex clean-up of the prefix
             $raw_prefix = isset( $_POST['anzen_prefix'] ) ? wp_unslash( $_POST['anzen_prefix'] ) : 'media';
             $prefix = preg_replace( '/[^a-zA-Z0-9_-]/', '', (string) $raw_prefix );
             if ( empty( $prefix ) ) {
                 $prefix = 'media'; // Fallback just in case
             }
             
-            $config_file = ANZEN_PLUGIN_DIR . 'config.php';
-
-            // Falls bereits ein gueltiger ANZEN_KEY existiert, diesen NIEMALS ueberschreiben,
-            // damit bestehende Links unter allen Umstaenden erhalten bleiben!
+            // If a valid ANZEN_KEY already exists, NEVER replace it: existing links must keep working
             if ( defined( 'ANZEN_KEY' ) && is_string( ANZEN_KEY ) && strlen( ANZEN_KEY ) >= 16 ) {
                 $key = bin2hex( ANZEN_KEY );
             } else {
@@ -81,9 +78,25 @@ class Anzen_Setup {
             $config_content .= "if ( ! defined( 'ANZEN_METHOD' ) ) define( 'ANZEN_METHOD', " . var_export( $method, true ) . " );\n";
             $config_content .= "if ( ! defined( 'ANZEN_MASK_PREFIX' ) ) define( 'ANZEN_MASK_PREFIX', " . var_export( $prefix, true ) . " );\n";
             
-            if ( file_put_contents( $config_file, $config_content, LOCK_EX ) !== false ) {
-                @chmod( $config_file, 0640 );
-                echo '<div class="notice notice-success"><p><strong>✅ Setup successful!</strong> The configuration has been saved.</p></div>';
+            // Outside the plugin folder (survives updates); the plugin folder is only the last fallback
+            $wp_root     = rtrim( str_replace( '\\', '/', ABSPATH ), '/' );
+            $config_file = anzen_write_config( $wp_root, $config_content );
+            $in_plugin   = false;
+            if ( $config_file === '' ) {
+                $config_file = anzen_legacy_config_file();
+                $in_plugin   = file_put_contents( $config_file, $config_content, LOCK_EX ) !== false;
+                if ( $in_plugin ) {
+                    @chmod( $config_file, 0640 );
+                } else {
+                    $config_file = '';
+                }
+            }
+
+            if ( $config_file !== '' ) {
+                echo '<div class="notice notice-success"><p><strong>✅ Setup successful!</strong> The configuration has been saved to <code>' . esc_html( $in_plugin ? realpath( $config_file ) : $config_file ) . '</code>.</p></div>';
+                if ( $in_plugin ) {
+                    echo '<div class="notice notice-warning"><p><strong>Warning:</strong> <code>' . esc_html( anzen_target_config_file( $wp_root ) ) . '</code> is not writable, so the configuration was saved in the plugin folder. The next plugin update deletes it. Make that folder writable for PHP (check <code>open_basedir</code>) or set another path in wp-config.php: <code>define( \'ANZEN_CONFIG_FILE\', \'/path/anzen-config.php\' );</code></p></div>';
+                }
                 
                 echo '<h2>Final Step: Server Configuration</h2>';
                 if ( $method === 'php' ) {
@@ -96,7 +109,7 @@ class Anzen_Setup {
                 echo '<p><i>Reload this page to exit the setup and activate the plugin.</i></p>';
                 return; // Stop rendering the form
             } else {
-                echo '<div class="notice notice-error"><p><strong>❌ Error:</strong> Could not write config.php. Please check your folder permissions.</p></div>';
+                echo '<div class="notice notice-error"><p><strong>❌ Error:</strong> Could not write the configuration file. Please check the folder permissions.</p></div>';
             }
         }
 

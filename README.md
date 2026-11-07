@@ -33,7 +33,7 @@ The token is resolved by a small standalone endpoint (`serve.php`) that does **n
   - **nginx:** hand-off via `X-Accel-Redirect`, nginx sends the file.
   - **Apache / LiteSpeed / other servers:** PHP `readfile()`.
 - **Your own URL prefix** – `/media/`, `/files/`, `/fairu/` … chosen in the setup.
-- **Setup wizard** – generates a 256-bit key, writes `config.php` and shows the matching server rule.
+- **Setup wizard** – generates a 256-bit key, saves the configuration outside the plugin folder (it survives updates) and shows the matching server rule.
 - **Admin untouched** – the media library and the dashboard keep the real URLs; only the frontend is masked.
 - **Hardened endpoint** – timing-safe comparisons, path traversal and null-byte protection, allow-list of file types, a plain 404 for every invalid request. SVG files are sent with a restrictive Content-Security-Policy.
 - **Updates from GitHub** – built-in update checker for new releases.
@@ -77,7 +77,7 @@ CSS, JavaScript and other theme or plugin files are not touched.
 4. Add the server rule that the wizard shows (see below) and reload the web server.
 5. Reload the setup page – Anzen is active.
 
-The wizard writes `config.php` into the plugin folder (permissions `0640`).
+The wizard saves the configuration outside the plugin folder (see [Configuration](#-configuration)), so plugin updates never delete the key.
 
 ---
 
@@ -114,7 +114,31 @@ RewriteRule ^media/([a-zA-Z0-9_-]+)$ wp-content/plugins/anzen/serve.php?t=$1 [L]
 
 ---
 
-## 🔧 Configuration (`config.php`)
+## 🔧 Configuration
+
+### Location
+
+WordPress deletes the whole plugin folder on every update, so Anzen keeps its configuration (with the secret key) outside of it. By default it is stored one level above the WordPress directory:
+
+```
+/path/to/site/                    ← parent folder
+├── secrets/
+│   └── anzen-<site folder>.php   ← Anzen configuration (0600)
+└── <site folder>/                ← WordPress (wp-load.php, wp-content …)
+```
+
+The file name contains the name of the WordPress folder, so several sites in the same parent folder never share one configuration. The folder is outside the web root and cannot be reached from the browser.
+
+PHP must be allowed to write there. If your hosting panel uses `open_basedir`, the parent folder has to be included (the default on most panels, as the customer folder is the parent of the site). Otherwise choose another location in `wp-config.php`, above the line `/* That's all, stop editing! */`:
+
+```php
+define( 'ANZEN_CONFIG_FILE', '/path/outside/webroot/anzen-config.php' );
+```
+
+**Upgrading from 1.3.x:** the old `config.php` in the plugin folder is copied to the new location automatically on the first request after the update (same key, all links keep working). If that fails, a warning appears in the admin. Make sure this has happened before the next update.
+
+### Constants
+
 
 | Constant | Meaning |
 |---|---|
@@ -126,9 +150,9 @@ RewriteRule ^media/([a-zA-Z0-9_-]+)$ wp-content/plugins/anzen/serve.php?t=$1 [L]
 
 ### Changing the prefix later
 
-Edit `ANZEN_MASK_PREFIX` in `config.php` and update the server rule. The tokens stay the same, only the folder in the URL changes. Keep the old rule for a while if old URLs are still cached.
+Edit `ANZEN_MASK_PREFIX` in the configuration file and update the server rule. The tokens stay the same, only the folder in the URL changes. Keep the old rule for a while if old URLs are still cached.
 
-> Do **not** delete `config.php` to run the wizard again: a new key would be generated and every existing link would stop working.
+> Do **not** delete the configuration file to run the wizard again: a new key would be generated and every existing link would stop working.
 
 ---
 
@@ -142,11 +166,16 @@ Edit `ANZEN_MASK_PREFIX` in `config.php` and update the server rule. The tokens 
 
 ## 🔄 Updates
 
-Anzen updates itself from the [GitHub releases](https://github.com/Suzu-chan1990/anzen/releases) of this repository. A release is offered as an update when its tag matches a higher `Version:` in `anzen.php` (e.g. tag `v1.3.1` for version `1.3.1`). If a ZIP is attached to the release, that ZIP is installed; it has to contain the folder `anzen/`. `config.php` is not part of the release and stays untouched.
+Anzen updates itself from the [GitHub releases](https://github.com/Suzu-chan1990/anzen/releases) of this repository. A release is offered as an update when its tag matches a higher `Version:` in `anzen.php` (e.g. tag `v1.3.1` for version `1.3.1`). If a ZIP is attached to the release, that ZIP is installed; it has to contain the folder `anzen/`. The configuration is stored outside the plugin folder and is not touched by updates.
 
 ---
 
 ## 📜 Changelog
+
+**v1.4**
+- **Fixed:** Every plugin update deleted `config.php` and with it the secret key, so the setup had to run again and a new key broke all masked links. WordPress removes the whole plugin folder on updates. The configuration is now stored outside the plugin folder, one level above the WordPress directory: `secrets/anzen-<site folder>.php` (directory `0700`, file `0600`). Another location can be set with `ANZEN_CONFIG_FILE` in `wp-config.php`.
+- **Added:** An existing `config.php` in the plugin folder is copied to the new location automatically (same key, all links keep working). If the location is not writable (e.g. `open_basedir`), the old file keeps working and the admin shows a warning.
+- **Added:** The setup wizard shows where the configuration was saved.
 
 **v1.3.2**
 - **Fixed:** Resized images (thumbnails, medium, site icon sizes …) got broken URLs like `/media/cropped-favicon-32x32.webp`. WordPress builds the URL of a resized image from the full-size URL by replacing the file name; that URL was already masked, so the file name ended up after the prefix. The full-size URL now stays unmasked inside this step and the finished URL of the resized image is masked as usual.

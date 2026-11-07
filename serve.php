@@ -2,8 +2,10 @@
 // NO WORDPRESS BOOT! This file runs in milliseconds.
 define( 'ANZEN_SERVING', true );
 
-$config_path = __DIR__ . '/config.php';
-if ( ! file_exists( $config_path ) ) {
+// Configuration outside the plugin folder (../secrets/anzen-<site folder>.php, ANZEN_CONFIG_FILE) or the old config.php
+require_once __DIR__ . '/includes/config-path.php';
+list( $config_path ) = anzen_locate_config( '' );
+if ( $config_path === '' ) {
     http_response_code( 404 );
     exit;
 }
@@ -19,7 +21,7 @@ if (
     exit;
 }
 
-// Bewiesener Nginx Bypass: Token direkt aus der URI lesen
+// Token is read from the URI directly (works when nginx/FastCGI drop the query string)
 $request_uri = $_SERVER['REQUEST_URI'] ?? '';
 $path = parse_url( $request_uri, PHP_URL_PATH );
 $token = $path ? basename( $path ) : '';

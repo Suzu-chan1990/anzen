@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Anzen
  * Description: Modular security plugin for URL masking. (v1.3 High-Performance)
- * Version: 1.3.2
+ * Version: 1.4
  * Author: Saguya
  * License: GPLv2 or later
  * License URI: https://www.gnu.org/licenses/gpl-2.0.html
@@ -16,13 +16,16 @@ if ( ! defined( 'ABSPATH' ) ) {
     exit;
 }
 
-define( 'ANZEN_VERSION', '1.3.2' );
+define( 'ANZEN_VERSION', '1.4' );
 define( 'ANZEN_PLUGIN_DIR', plugin_dir_path( __FILE__ ) );
 
-$config_file = ANZEN_PLUGIN_DIR . 'config.php';
+require_once ANZEN_PLUGIN_DIR . 'includes/config-path.php';
+
+// The configuration lives outside the plugin folder (WordPress deletes that folder on updates)
+list( $config_file, $anzen_config_legacy ) = anzen_locate_config( rtrim( str_replace( '\\', '/', ABSPATH ), '/' ) );
 $anzen_is_configured = false;
 
-if ( file_exists( $config_file ) ) {
+if ( $config_file !== '' ) {
     require_once $config_file;
     if (
         defined( 'ANZEN_KEY' ) && is_string( ANZEN_KEY ) && strlen( ANZEN_KEY ) > 0 &&
@@ -30,6 +33,22 @@ if ( file_exists( $config_file ) ) {
     ) {
         $anzen_is_configured = true;
     }
+}
+
+// Old config.php in the plugin folder: copy it to the new location (same key, links keep working).
+// If that location cannot be written, the old file keeps working and the admin shows a warning.
+if ( $anzen_is_configured && $anzen_config_legacy ) {
+    $anzen_moved = anzen_write_config( rtrim( str_replace( '\\', '/', ABSPATH ), '/' ), (string) file_get_contents( $config_file ) );
+    if ( $anzen_moved === '' ) {
+        add_action( 'admin_notices', function () {
+            if ( ! current_user_can( 'manage_options' ) ) {
+                return;
+            }
+            $target = anzen_target_config_file( rtrim( str_replace( '\\', '/', ABSPATH ), '/' ) );
+            echo '<div class="notice notice-warning"><p><strong>Anzen:</strong> The configuration is still stored in the plugin folder and will be deleted by the next plugin update (a new key would break all masked links). It could not be copied to <code>' . esc_html( $target ) . '</code>. Make this folder writable for PHP (check <code>open_basedir</code>) or set another path in wp-config.php: <code>define( \'ANZEN_CONFIG_FILE\', \'/path/anzen-config.php\' );</code></p></div>';
+        } );
+    }
+    unset( $anzen_moved );
 }
 
 // Default prefix only after config.php was loaded, otherwise the prefix chosen in the setup is never used
