@@ -1,8 +1,8 @@
 <?php
 /**
  * Plugin Name: Anzen
- * Description: Modular security plugin for URL masking. (v1.3 High-Performance)
- * Version: 1.4
+ * Description: Hides the real paths of media files behind signed, encrypted tokens.
+ * Version: 1.4.1
  * Author: Saguya
  * License: GPLv2 or later
  * License URI: https://www.gnu.org/licenses/gpl-2.0.html
@@ -16,10 +16,11 @@ if ( ! defined( 'ABSPATH' ) ) {
     exit;
 }
 
-define( 'ANZEN_VERSION', '1.4' );
+define( 'ANZEN_VERSION', '1.4.1' );
 define( 'ANZEN_PLUGIN_DIR', plugin_dir_path( __FILE__ ) );
 
 require_once ANZEN_PLUGIN_DIR . 'includes/config-path.php';
+require_once ANZEN_PLUGIN_DIR . 'includes/crypto.php';
 
 // The configuration lives outside the plugin folder (WordPress deletes that folder on updates)
 list( $config_file, $anzen_config_legacy ) = anzen_locate_config( rtrim( str_replace( '\\', '/', ABSPATH ), '/' ) );
@@ -65,6 +66,11 @@ if ( $anzen_is_configured ) {
         $anzen_masker->init();
     }
     run_anzen();
+
+    if ( is_admin() ) {
+        require_once ANZEN_PLUGIN_DIR . 'includes/class-anzen-admin.php';
+        ( new Anzen_Admin( $config_file ) )->init();
+    }
 
 } else {
     require_once ANZEN_PLUGIN_DIR . 'includes/class-anzen-setup.php';

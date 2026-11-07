@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.4.1]
+- **Fixed:** AVIF and JPEG XL files (`.avif`, `.jxl`) were not masked. Image converters like Henkan add them as `<source>` in `<picture>` tags, and browsers load AVIF first, so the real upload path stayed visible. Both types are now masked and delivered.
+- **Fixed:** `serve.php` sets the content type by file extension. `mime_content_type()` does not know AVIF and JPEG XL on older systems and returned `application/octet-stream`.
+- **Added:** New token format AES-256-GCM: encryption and authentication in one step, URLs about half as long. New installations use it from the start.
+- **Added:** Existing installations keep AES-256-CBC, so all links stay the same. **Settings → Anzen Security** has a button to switch new URLs to GCM; existing CBC links keep working after the switch, because `serve.php` accepts both formats.
+- **Added:** Status page under **Settings → Anzen Security** after the setup (configuration file, prefix, delivery method, token format).
+
 ## [1.4]
 - **Fixed:** Every plugin update deleted `config.php` and with it the secret key, so the setup had to run again and a new key broke all masked links. WordPress removes the whole plugin folder on updates. The configuration is now stored outside the plugin folder, one level above the WordPress directory: `secrets/anzen-<site folder>.php` (directory `0700`, file `0600`). Another location can be set with `ANZEN_CONFIG_FILE` in `wp-config.php`.
 - **Added:** An existing `config.php` in the plugin folder is copied to the new location automatically (same key, all links keep working). If the location is not writable (e.g. `open_basedir`), the old file keeps working and the admin shows a warning.

@@ -27,7 +27,8 @@ The token is resolved by a small standalone endpoint (`serve.php`) that does **n
 
 ## ✨ Features
 
-- **Encrypted, signed tokens** – the file path is signed with HMAC-SHA256 and encrypted with AES-256-CBC. Tokens cannot be guessed, changed or used for other files.
+- **Encrypted, authenticated tokens** – AES-256-GCM (new installations) or AES-256-CBC + HMAC-SHA256 (installations before 1.4.1). Tokens cannot be guessed, changed or used for other files.
+- **Switch to GCM** – one click under **Settings → Anzen Security**; existing links keep working.
 - **Stable URLs** – the same file always gets the same token, so caches and CDNs work normally.
 - **Fast delivery** – `serve.php` runs without WordPress and without database queries.
   - **nginx:** hand-off via `X-Accel-Redirect`, nginx sends the file.
@@ -44,7 +45,7 @@ The token is resolved by a small standalone endpoint (`serve.php`) that does **n
 
 Media files in the uploads folder with these extensions:
 
-`jpg` `jpeg` `png` `gif` `webp` `svg` `mp4` `webm` `mp3` `wav` `ogg`
+`jpg` `jpeg` `png` `gif` `webp` `avif` `jxl` `svg` `mp4` `webm` `mp3` `wav` `ogg`
 
 Anzen hooks into:
 
@@ -147,6 +148,7 @@ define( 'ANZEN_CONFIG_FILE', '/path/outside/webroot/anzen-config.php' );
 | `ANZEN_NGINX_URI` | URL path of the uploads folder (used for `X-Accel-Redirect`) |
 | `ANZEN_METHOD` | `nginx` or `php` |
 | `ANZEN_MASK_PREFIX` | URL prefix, e.g. `media` |
+| `ANZEN_CIPHER` | Format of new URLs: `gcm` or `cbc`. Missing = `cbc` (installations before 1.4.1). Both formats are always accepted. |
 
 ### Changing the prefix later
 
@@ -159,7 +161,11 @@ Edit `ANZEN_MASK_PREFIX` in the configuration file and update the server rule. T
 ## 🛡️ How it works
 
 1. **Masking** – on the frontend, Anzen replaces upload URLs with `/<prefix>/<token>`.
-2. **Token** – `token = base64url( IV ‖ AES-256-CBC( path | HMAC-SHA256(path) ) )`. The IV is derived from the path and the key, so a file always gets the same token.
+2. **Token** – two formats, a file always gets the same token:
+   - **GCM** (default since 1.4.1): `token = "g" + base64url( nonce ‖ AES-256-GCM( path ) ‖ tag )`. Encryption key and nonce key are derived from `ANZEN_KEY` with HKDF; the nonce is an HMAC of the path.
+   - **CBC** (installations before 1.4.1): `token = base64url( IV ‖ AES-256-CBC( path | HMAC-SHA256(path) ) )`. The IV is derived from the path and the key.
+
+   `serve.php` recognizes the format by the first character and accepts both.
 3. **Delivery** – the server rule sends `/<prefix>/<token>` to `serve.php`. It decrypts the token, checks the signature, the IV and the path, and delivers the file – or answers 404.
 
 ---
@@ -171,6 +177,13 @@ Anzen updates itself from the [GitHub releases](https://github.com/Suzu-chan1990
 ---
 
 ## 📜 Changelog
+
+**v1.4.1**
+- **Fixed:** AVIF and JPEG XL files (`.avif`, `.jxl`) were not masked. Image converters like Henkan add them as `<source>` in `<picture>` tags, and browsers load AVIF first, so the real upload path stayed visible. Both types are now masked and delivered.
+- **Fixed:** `serve.php` sets the content type by file extension. `mime_content_type()` does not know AVIF and JPEG XL on older systems and returned `application/octet-stream`.
+- **Added:** New token format AES-256-GCM: encryption and authentication in one step, URLs about half as long. New installations use it from the start.
+- **Added:** Existing installations keep AES-256-CBC, so all links stay the same. **Settings → Anzen Security** has a button to switch new URLs to GCM; existing CBC links keep working after the switch, because `serve.php` accepts both formats.
+- **Added:** Status page under **Settings → Anzen Security** after the setup (configuration file, prefix, delivery method, token format).
 
 **v1.4**
 - **Fixed:** Every plugin update deleted `config.php` and with it the secret key, so the setup had to run again and a new key broke all masked links. WordPress removes the whole plugin folder on updates. The configuration is now stored outside the plugin folder, one level above the WordPress directory: `secrets/anzen-<site folder>.php` (directory `0700`, file `0600`). Another location can be set with `ANZEN_CONFIG_FILE` in `wp-config.php`.

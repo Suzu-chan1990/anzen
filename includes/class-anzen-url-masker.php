@@ -67,7 +67,7 @@ class Anzen_URL_Masker {
     }
 
     public function mask_thumbnail_html( $html, $post_id = 0, $post_thumbnail_id = 0, $size = '', $attr = '' ) {
-        // FIX: \x22 und \x27 machen das Escapen von Anfuehrungszeichen ueberfluessig
+        // \x22 and \x27 avoid escaping quotes
         return preg_replace_callback('/(src|srcset)=([\x22\x27])(https?:\/\/[^\x22\x27]+?)\2/i', array( $this, 'replace_html_attribute_callback' ), $html);
     }
 
@@ -83,8 +83,8 @@ class Anzen_URL_Masker {
     public function mask_content_urls( $content ) {
         if ( empty( $content ) ) return $content;
         $base_url_no_protocol = preg_replace( '/^https?:\/\//i', '', $this->upload_base_url );
-        // FIX: Nutzt Hex-Codes fuer Anfuehrungszeichen, um Terminal-Stripping zu verhindern
-        $pattern = '/(https?:\/\/' . preg_quote( $base_url_no_protocol . '/', '/' ) . ')([^\x22\x27\s><]+\.(?:jpg|jpeg|png|gif|webp|svg|mp4|webm|mp3|wav|ogg)(?:\?[^\x22\x27\s><]*)?)/i';
+        // Hex codes for quotes, so the pattern survives editing in console editors
+        $pattern = '/(https?:\/\/' . preg_quote( $base_url_no_protocol . '/', '/' ) . ')([^\x22\x27\s><]+\.(?:' . anzen_media_extensions() . ')(?:\?[^\x22\x27\s><]*)?)/i';
         return preg_replace_callback( $pattern, array( $this, 'replace_single_url_callback' ), $content );
     }
 
@@ -95,17 +95,16 @@ class Anzen_URL_Masker {
     }
 
     private function get_masked_url( $file_name ) {
-        $cache_key = 'anzen_mask_' . md5( $file_name );
+        $cipher    = anzen_cipher();
+        $cache_key = 'anzen_mask_' . $cipher . '_' . md5( $file_name );
         if ( $cached = wp_cache_get( $cache_key, 'anzen' ) ) return $cached;
 
-        // KRYPTOGRAFIE UNVERAENDERT GELASSEN -> 100% KOMPATIBILITAET MIT ALLEN BESTEHENDEN LINKS!
-        $signature = hash_hmac( 'sha256', $file_name, ANZEN_KEY );
-        $payload   = $file_name . '|' . $signature;
-        
-        $iv  = substr( hash( 'sha256', $file_name . ANZEN_KEY ), 0, 16 );
-        $ciphertext = openssl_encrypt( $payload, 'aes-256-cbc', ANZEN_KEY, OPENSSL_RAW_DATA, $iv );
-        $token = rtrim( strtr( base64_encode( $iv . $ciphertext ), '+/', '-_' ), '=' );
-        
+        // Format of new URLs: CBC (unchanged for existing installations) or GCM, see includes/crypto.php
+        $token = anzen_make_token( $file_name, $cipher );
+        if ( $token === '' ) {
+            return get_site_url() . '/' . $this->mask_prefix . '/';
+        }
+
         $masked_url = get_site_url() . '/' . $this->mask_prefix . '/' . $token;
         wp_cache_set( $cache_key, $masked_url, 'anzen', 86400 );
         return $masked_url;
@@ -121,15 +120,15 @@ class Anzen_URL_Masker {
             return false;
         }
 
-        if ( ! preg_match( '/\.(jpg|jpeg|png|gif|webp|svg|mp4|webm|mp3|wav|ogg)$/i', $path ) ) {
+        if ( ! preg_match( '/\.(' . anzen_media_extensions() . ')$/i', $path ) ) {
             return false;
         }
 
         $relative = substr( $path, strlen( $upload_path ) );
         $relative = ltrim( $relative, '/' );
 
-        // Blockiert jegliche Traversal-Segmente (auch URL-kodiert wie %2e%2e) oder Null-Bytes sofort,
-        // laesst aber alle regulären Dateipfade 100% unveraendert fuer identische Tokens!
+        // Rejects traversal segments (also URL-encoded like %2e%2e) and null bytes, but keeps every
+        // regular path unchanged, so tokens stay identical
         $decoded_relative = rawurldecode( $relative );
         if (
             str_contains( $relative, "\0" ) ||

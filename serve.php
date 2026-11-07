@@ -4,6 +4,7 @@ define( 'ANZEN_SERVING', true );
 
 // Configuration outside the plugin folder (../secrets/anzen-<site folder>.php, ANZEN_CONFIG_FILE) or the old config.php
 require_once __DIR__ . '/includes/config-path.php';
+require_once __DIR__ . '/includes/crypto.php';
 list( $config_path ) = anzen_locate_config( '' );
 if ( $config_path === '' ) {
     http_response_code( 404 );
@@ -31,53 +32,19 @@ if ( empty( $token ) || $token === ANZEN_MASK_PREFIX || $token === 'serve.php' )
     exit;
 }
 
-$b64 = strtr( $token, '-_', '+/' );
-$raw = base64_decode( $b64 );
-
-if ( $raw === false || strlen( $raw ) <= 16 ) {
+// Both token formats (CBC and GCM) are accepted, see includes/crypto.php
+$file_name = anzen_read_token( $token );
+if ( $file_name === '' ) {
     http_response_code( 404 );
     exit;
 }
 
-$iv = substr( $raw, 0, 16 );
-$ciphertext = substr( $raw, 16 );
-
-$payload = openssl_decrypt( $ciphertext, 'aes-256-cbc', ANZEN_KEY, OPENSSL_RAW_DATA, $iv );
-if ( ! $payload ) {
-    // Timing-Ausgleich gegen Padding-Oracle-Seitenkanaele
-    hash_hmac( 'sha256', $token, ANZEN_KEY );
-    http_response_code( 404 );
-    exit;
-}
-
-$parts = explode( '|', $payload );
-if ( count( $parts ) < 2 ) {
-    http_response_code( 404 );
-    exit;
-}
-
-$signature = array_pop( $parts );
-$file_name = implode( '|', $parts );
-
-$expected_sig = hash_hmac( 'sha256', $file_name, ANZEN_KEY );
-if ( ! hash_equals( $expected_sig, $signature ) ) {
-    http_response_code( 404 );
-    exit;
-}
-
-// Zusaetzliche Konsistenzpruefung des deterministischen IV (100% kompatibel mit allen generierten Links)
-$expected_iv = substr( hash( 'sha256', $file_name . ANZEN_KEY ), 0, 16 );
-if ( ! hash_equals( $expected_iv, $iv ) ) {
-    http_response_code( 404 );
-    exit;
-}
-
-// Strikter Schutz vor Directory Traversal & Null-Bytes
+// Strict protection against directory traversal and null bytes
 $file_name = rawurldecode( $file_name );
 if (
     str_contains( $file_name, "\0" ) ||
     preg_match( '#(?:^|/|\\\\)\.\.?(?:/|\\\\|$)#', $file_name ) ||
-    ! preg_match( '/\.(jpg|jpeg|png|gif|webp|svg|mp4|webm|mp3|wav|ogg)$/i', $file_name )
+    ! preg_match( '/\.(' . anzen_media_extensions() . ')$/i', $file_name )
 ) {
     http_response_code( 404 );
     exit;
@@ -96,22 +63,22 @@ if (
     exit;
 }
 
-// 1. Header setzen fuer sauberes und sicheres Browser-Rendering
-$mime = mime_content_type( $real_path );
-header( 'Content-Type: ' . ( $mime ? $mime : 'application/octet-stream' ) );
+// 1. Headers (content type by extension; mime_content_type() does not know AVIF/JXL everywhere)
+$mime = anzen_mime_type( $real_path );
+header( 'Content-Type: ' . $mime );
 header( 'X-Content-Type-Options: nosniff' );
 if ( $mime === 'image/svg+xml' ) {
     header( "Content-Security-Policy: default-src 'none'; style-src 'unsafe-inline'; sandbox" );
 }
 header( 'Cache-Control: public, max-age=31536000, immutable' );
 
-// 2. Auslieferung starten (ohne Debug-Texte)
+// 2. Delivery (no debug output)
 if ( defined( 'ANZEN_METHOD' ) && ANZEN_METHOD === 'php' ) {
     header( 'Content-Length: ' . filesize( $real_path ) );
     readfile( $real_path );
     exit;
 } else {
-    // Nginx Fast-Lane (X-Accel-Redirect) mit validiertem Relativpfad
+    // nginx fast lane (X-Accel-Redirect) with the validated relative path
     $clean_rel_path = str_replace( '\\', '/', substr( $real_path, strlen( $base_dir ) + 1 ) );
     $nginx_uri = defined( 'ANZEN_NGINX_URI' ) ? ANZEN_NGINX_URI : '/wp-content/uploads';
     $redirect_path = rtrim( $nginx_uri, '/' ) . '/' . ltrim( $clean_rel_path, '/' );

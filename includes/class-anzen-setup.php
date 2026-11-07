@@ -62,10 +62,14 @@ class Anzen_Setup {
             }
             
             // If a valid ANZEN_KEY already exists, NEVER replace it: existing links must keep working
+            // Token format: an existing key keeps its format (its links must stay valid);
+            // a new installation starts with AES-256-GCM
             if ( defined( 'ANZEN_KEY' ) && is_string( ANZEN_KEY ) && strlen( ANZEN_KEY ) >= 16 ) {
-                $key = bin2hex( ANZEN_KEY );
+                $key    = bin2hex( ANZEN_KEY );
+                $cipher = anzen_cipher();
             } else {
-                $key = bin2hex( random_bytes( 32 ) );
+                $key    = bin2hex( random_bytes( 32 ) );
+                $cipher = 'gcm';
             }
             
             // Build config file content safely using var_export
@@ -77,6 +81,7 @@ class Anzen_Setup {
             $config_content .= "if ( ! defined( 'ANZEN_NGINX_URI' ) ) define( 'ANZEN_NGINX_URI', " . var_export( $relative_baseurl, true ) . " );\n";
             $config_content .= "if ( ! defined( 'ANZEN_METHOD' ) ) define( 'ANZEN_METHOD', " . var_export( $method, true ) . " );\n";
             $config_content .= "if ( ! defined( 'ANZEN_MASK_PREFIX' ) ) define( 'ANZEN_MASK_PREFIX', " . var_export( $prefix, true ) . " );\n";
+            $config_content .= "if ( ! defined( 'ANZEN_CIPHER' ) ) define( 'ANZEN_CIPHER', " . var_export( $cipher, true ) . " );\n";
             
             // Outside the plugin folder (survives updates); the plugin folder is only the last fallback
             $wp_root     = rtrim( str_replace( '\\', '/', ABSPATH ), '/' );
